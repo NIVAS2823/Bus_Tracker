@@ -1,14 +1,25 @@
-# Bus_Tracker
-This is a single-page, real-time bus tracking application built with React and the Google Maps JavaScript API. It provides live, visual tracking of a bus along a predefined route, with estimated times of arrival (ETA) to stops.
+Bus Tracker
+This is a real-time bus tracking application that simulates live bus movement along a predefined route in Hyderabad, India. The application provides users with estimated times of arrival (ETA) to their next stop and the final destination.
 
-Technologies Used:
+Features
+Live Bus Tracking: The bus icon moves smoothly along the route, with its position updated in real-time.
 
-React: The core frontend framework for building the user interface.
+ETA Calculation: The application calculates and displays the estimated time of arrival to the next stop and the final destination.
 
-Google Maps JavaScript API: Used to render the interactive map and custom markers.
+Location-based Information: Users can see the current location of the bus, including its latitude and longitude, and the name of the nearest location.
 
-@react-google-maps/api: A wrapper for the Google Maps API that simplifies its use within React.
+Modern UI: The user interface is designed with a clean, modern aesthetic using CSS Modules.
 
-CSS Modules: For styling the component with scoped, modern CSS to ensure a clean and maintainable design.
+Stop Markers: The map displays markers for each designated bus stop, making it easy for users to visualize the entire route.
 
-JavaScript & TypeScript: The core programming languages for the application logic.
+Technologies
+React: The core JavaScript library for building the user interface.
+
+Google Maps JavaScript API: Used for rendering the map and handling location data.
+
+@react-google-maps/api: A React wrapper for the Google Maps API.
+
+CSS Modules: For managing component-specific styles and preventing style conflicts.
+
+TypeScript: A typed superset of JavaScript that helps catch errors during development.
+
