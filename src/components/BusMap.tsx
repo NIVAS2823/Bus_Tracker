@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
+import { MapContainer, TileLayer, Marker, Tooltip } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
 import busIcon from "../assets/bus_icon.png";
 import styles from "./BusMap.module.css";
 
@@ -38,64 +40,45 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     return R * c;
 }
 
-const BusMap: React.FC = () => {
-    const { isLoaded } = useJsApiLoader({
-        id: "google-map-script",
-        googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    });
+const busMarkerIcon = new L.Icon({
+    iconUrl: busIcon,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+});
 
+const stopMarkerIcon = new L.Icon({
+    iconUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="%236366f1" stroke="%23ffffff" stroke-width="2"/></svg>',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+});
+
+const BusMap: React.FC = () => {
     const [busLocation, setBusLocation] = useState<BusLocation | null>(null);
     const [currentStatus, setCurrentStatus] = useState("Trip starting...");
     const [etaToNextStop, setEtaToNextStop] = useState<string>('');
     const [totalEtaToCollege, setTotalEtaToCollege] = useState<string>('');
     const routeIndex = useRef(0);
     const animationFrameId = useRef<number | null>(null);
-    const isMovingRef = useRef(false);
 
     useEffect(() => {
-        if (!isLoaded || isMovingRef.current) return;
-
-        const startMoving = () => {
-            isMovingRef.current = true;
-
+        const startTrip = () => {
             const animateStep = () => {
                 const currentPoint = pathCoordinates[routeIndex.current];
                 const nextPoint = pathCoordinates[routeIndex.current + 1];
 
                 if (!nextPoint) {
                     setCurrentStatus(`Trip completed at ${currentPoint.name}`);
-                    isMovingRef.current = false;
                     return;
                 }
 
-                // --- FIX: Moved the calculation here ---
-                const distanceToNextStop = haversineDistance(
-                    currentPoint.lat, currentPoint.lng,
-                    nextPoint.lat, nextPoint.lng
-                );
-                const durationToNextStopInSeconds = distanceToNextStop / speedMetersPerSecond;
-
-                let totalRemainingDistance = distanceToNextStop;
-                for (let i = routeIndex.current + 1; i < pathCoordinates.length - 1; i++) {
-                    totalRemainingDistance += haversineDistance(
-                        pathCoordinates[i].lat, pathCoordinates[i].lng,
-                        pathCoordinates[i+1].lat, pathCoordinates[i+1].lng
-                    );
-                }
-                const totalRemainingDurationInSeconds = totalRemainingDistance / speedMetersPerSecond;
-
-                setEtaToNextStop(`ETA: ${Math.round(durationToNextStopInSeconds)} seconds`);
-                setTotalEtaToCollege(`Total ETA: ${Math.round(totalRemainingDurationInSeconds / 60)} minutes`);
-                // --- END FIX ---
-
                 setCurrentStatus(`Moving towards ${nextPoint.name}`);
-
-                const duration = durationToNextStopInSeconds * 1000;
+                
+                const segmentDuration = haversineDistance(currentPoint.lat, currentPoint.lng, nextPoint.lat, nextPoint.lng) / speedMetersPerSecond;
                 const startTime = performance.now();
 
                 const animate = (time: number) => {
                     const elapsed = time - startTime;
-                    const progress = Math.min(elapsed / duration, 1);
+                    const progress = Math.min(elapsed / (segmentDuration * 1000), 1);
 
                     const lat = currentPoint.lat + (nextPoint.lat - currentPoint.lat) * progress;
                     const lng = currentPoint.lng + (nextPoint.lng - currentPoint.lng) * progress;
@@ -107,6 +90,23 @@ const BusMap: React.FC = () => {
                         locationName: `Near ${currentPoint.name}`,
                         isMoving: true,
                     });
+                    
+                    const remainingDistanceToNextStop = haversineDistance(
+                        lat, lng,
+                        nextPoint.lat, nextPoint.lng
+                    );
+                    const remainingDurationToNextStop = remainingDistanceToNextStop / speedMetersPerSecond;
+                    setEtaToNextStop(`${Math.round(remainingDurationToNextStop)} seconds`);
+
+                    let totalRemainingDistance = remainingDistanceToNextStop;
+                    for (let i = routeIndex.current + 1; i < pathCoordinates.length - 1; i++) {
+                        totalRemainingDistance += haversineDistance(
+                            pathCoordinates[i].lat, pathCoordinates[i].lng,
+                            pathCoordinates[i + 1].lat, pathCoordinates[i + 1].lng
+                        );
+                    }
+                    const totalRemainingDuration = totalRemainingDistance / speedMetersPerSecond;
+                    setTotalEtaToCollege(`${Math.round(totalRemainingDuration / 60)} minutes`);
 
                     if (progress < 1) {
                         animationFrameId.current = requestAnimationFrame(animate);
@@ -122,24 +122,19 @@ const BusMap: React.FC = () => {
                         });
 
                         setCurrentStatus(`Stopping at ${nextPoint.name}`);
-
+                        
+                        // Wait for the stop duration, then start the next segment
                         if (nextPoint.stopDuration > 0) {
-                            setTimeout(() => {
-                                animateStep();
-                            }, nextPoint.stopDuration);
+                            setTimeout(animateStep, nextPoint.stopDuration);
                         } else {
                             animateStep();
                         }
                     }
                 };
-
                 animationFrameId.current = requestAnimationFrame(animate);
             };
 
-            animateStep();
-        };
-
-        if (pathCoordinates.length > 0) {
+            // Set the initial bus location at the first stop
             setBusLocation({
                 busId: "BUS-1",
                 latitude: pathCoordinates[0].lat,
@@ -148,15 +143,16 @@ const BusMap: React.FC = () => {
                 isMoving: false,
             });
 
-            setTimeout(() => {
-                startMoving();
-            }, pathCoordinates[0].stopDuration);
-        }
+            // Start the first animation after the initial stop duration
+            setTimeout(animateStep, pathCoordinates[0].stopDuration);
+        };
+
+        startTrip();
 
         return () => {
             if (animationFrameId.current !== null) cancelAnimationFrame(animationFrameId.current);
         };
-    }, [isLoaded]);
+    }, []);
 
     return (
         <div className={styles.container}>
@@ -181,46 +177,36 @@ const BusMap: React.FC = () => {
                 </p>
             </div>
 
-            {isLoaded ? (
-                <GoogleMap
-                    mapContainerClassName={styles.mapContainer}
-                    center={busLocation ? { lat: busLocation.latitude, lng: busLocation.longitude } : center}
-                    zoom={14}
-                >
-                    {busLocation && (
-                        <Marker
-                            position={{ lat: busLocation.latitude, lng: busLocation.longitude }}
-                            icon={{
-                                url: busIcon,
-                                scaledSize: new window.google.maps.Size(40, 40),
-                                anchor: new window.google.maps.Point(20, 20),
-                            }}
-                        />
-                    )}
-                    {pathCoordinates.map((stop, index) => (
-                        <Marker
-                            key={index}
-                            position={{ lat: stop.lat, lng: stop.lng }}
-                            label={{
-                                text: stop.name,
-                                color: "#1f2937",
-                                fontWeight: "bold",
-                                fontSize: "12px",
-                            }}
-                            icon={{
-                                path: window.google.maps.SymbolPath.CIRCLE,
-                                scale: 6,
-                                fillColor: "#6366f1",
-                                fillOpacity: 0.9,
-                                strokeColor: "#ffffff",
-                                strokeWeight: 2,
-                            }}
-                        />
-                    ))}
-                </GoogleMap>
-            ) : (
-                <p>Loading map...</p>
-            )}
+            <MapContainer
+                center={busLocation ? [busLocation.latitude, busLocation.longitude] : [center.lat, center.lng]}
+                zoom={14}
+                scrollWheelZoom={true}
+                className={styles.mapContainer}
+            >
+                <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+
+                {busLocation && (
+                    <Marker
+                        position={[busLocation.latitude, busLocation.longitude]}
+                        icon={busMarkerIcon}
+                    />
+                )}
+
+                {pathCoordinates.map((stop, index) => (
+                    <Marker
+                        key={index}
+                        position={[stop.lat, stop.lng]}
+                        icon={stopMarkerIcon}
+                    >
+                        <Tooltip direction="bottom" offset={[0, 10]} opacity={1} permanent>
+                            {stop.name}
+                        </Tooltip>
+                    </Marker>
+                ))}
+            </MapContainer>
         </div>
     );
 };
